@@ -23,7 +23,9 @@ teammate's next prompt ◀── hook injects: "📬 New on api: auth endpoint m
 - **Discover** — a `SessionStart` hook lists available channels so you can `join` the ones you care about.
 - **Storage** — one Kafka topic per channel (`syncup.<name>`), plus a compacted `syncup._registry` topic that acts as the channel catalog. "Unread" is tracked per session via a Kafka consumer group — no database, no server.
 
-## Setup
+---
+
+# Setup
 
 **Requirements:** Go 1.25+, and network access to your Kafka brokers.
 
@@ -59,32 +61,11 @@ syncup list
 If you get `command not found`, `~/.local/bin` isn't on your `PATH` — add
 `export PATH="$HOME/.local/bin:$PATH"` to your `~/.zshrc` and reopen the shell.
 
-**5. Wire up the Claude Code hooks** — see [Claude Code integration](#claude-code-integration) below.
-
-## Usage
-
-| Command | Description |
-|---|---|
-| `syncup create <channel> [description]` | Create a channel |
-| `syncup list` | List channels (`✓` = joined) |
-| `syncup join <channel>` | Subscribe — you'll see updates posted *from now on* |
-| `syncup leave <channel>` | Unsubscribe |
-| `syncup publish <channel> <message...>` | Post an update |
-| `syncup inbox [--quiet]` | Read unread updates |
-| `syncup delete <channel>` | Retire a channel |
-
-```sh
-syncup create api "backend API work"
-syncup join api
-syncup publish api "auth endpoint moved to /v2, update clients before deploy (PR #482)"
-syncup inbox
-# 📬 New on api (1):
-#   • alice, 2m ago: auth endpoint moved to /v2, update clients before deploy (PR #482)
-```
+**5. Integrate with your agent** — wire up the hooks below so updates flow automatically.
 
 ## Agent integration
 
-`syncup` is just a CLI, so **any agent that can run shell commands can use it** — to publish, run `syncup publish …`; to catch up, run `syncup inbox`. The only agent-specific part is how updates get surfaced *automatically* before each turn. Pick the section for your tool.
+`syncup` is just a CLI, so **any agent that can run shell commands can use it** — to publish, run `syncup publish …`; to catch up, run `syncup inbox`. The only agent-specific part is how updates get surfaced *automatically*. Pick the section for your tool.
 
 ### Claude Code (automatic, via hooks)
 
@@ -145,6 +126,32 @@ Codex has no per-prompt hook, so instruct the agent via `AGENTS.md` (global `~/.
 - **With a rules/instructions file** (e.g. Cursor rules, `CLAUDE.md`, a system prompt): paste the same instruction block as above.
 - **With a pre-prompt/pre-run hook**: wire `syncup inbox` into it, the same way the Claude Code hook does.
 - **No automation**: just run `syncup inbox` yourself whenever you want to catch up, and `syncup publish …` to post.
+
+---
+
+# Usage
+
+Day-to-day you just talk to your agent ("post to api: …", "anything new?") and the hooks do the rest. Under the hood it's these commands — your agent runs them, or you can run them directly:
+
+| Command | Description |
+|---|---|
+| `syncup create <channel> [description]` | Create a channel |
+| `syncup list` | List channels (`✓` = joined) |
+| `syncup join <channel>` | Subscribe — you'll see updates posted *from now on* |
+| `syncup leave <channel>` | Unsubscribe |
+| `syncup publish <channel> <message...>` | Post an update |
+| `syncup inbox [channel] [--quiet]` | Read unread updates (all channels, or one) |
+| `syncup watch [--tmux <pane>]` | Daemon: push new updates into a tmux pane |
+| `syncup delete <channel>` | Retire a channel |
+
+```sh
+syncup create api "backend API work"
+syncup join api
+syncup publish api "auth endpoint moved to /v2, update clients before deploy (PR #482)"
+syncup inbox
+# 📬 New on api (1):
+#   • alice, 2m ago: auth endpoint moved to /v2, update clients before deploy (PR #482)
+```
 
 ## Message schema
 

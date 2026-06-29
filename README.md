@@ -21,7 +21,7 @@ teammate's next prompt ◀── hook injects: "📬 New on api: auth endpoint m
 - **Publish** — your agent runs `syncup publish <channel> <msg>` when you tell it to. You decide what and when; nothing is automatic on the send side.
 - **Consume** — a Claude Code `UserPromptSubmit` hook runs `syncup inbox` before each prompt and prepends any unread messages from your subscribed channels. Zero effort to stay current.
 - **Discover** — a `SessionStart` hook lists available channels so you can `join` the ones you care about.
-- **Storage** — one Kafka topic per channel (`syncup.<name>`), plus a compacted `syncup._registry` topic that acts as the channel catalog. "Unread" is tracked per user via a Kafka consumer group (`syncup.<user>`) — no database, no server.
+- **Storage** — one Kafka topic per channel (`syncup.<name>`), plus a compacted `syncup._registry` topic that acts as the channel catalog. "Unread" is tracked per session via a Kafka consumer group — no database, no server.
 
 ## Setup
 
@@ -141,7 +141,7 @@ Each update is one Kafka record: headers carry `type`, `author`, `schema` for ch
 ## Design notes
 
 - **From-now semantics.** On *first* join, `syncup` records the channel's current end offset, so you only ever see messages posted after you joined. Re-joining a channel you already follow leaves your position untouched (it never skips unread). History replay is a deliberate non-feature for now.
-- **Per-user offsets.** "Unread" is tracked once per person, via the consumer group `syncup.<user>` — so an update reaches each teammate exactly once, and "caught up" follows you across machines. Note: if *you* run several sessions at once, whichever reads first advances the shared cursor; the others won't re-show that update.
+- **Per-session offsets.** Each agent session gets its own cursor (consumer group `syncup.<user>.<session-id>`, with the session id supplied by the hooks), so **every open session catches up independently** — an update shows up in all of them, not just whichever reads first. Without a session id (manual CLI use), it falls back to a per-user cursor (`syncup.<user>`). Per-session groups self-expire on the broker, so there's nothing to clean up.
 - **Namespacing.** Every topic is prefixed `syncup.`, so the tool coexists safely on a shared cluster and `list` only ever shows channels from its own registry.
 - **Resilience.** Group-coordinator hiccups (fresh cluster, failover) are retried; the Claude Code hooks fail open so a Kafka outage never blocks your session.
 

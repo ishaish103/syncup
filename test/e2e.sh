@@ -72,6 +72,17 @@ echo "$OUT5" | grep -q "channel one" && ok "other channel still unread after sco
 OUT6="$(b inbox nonexistent-chan 2>&1 || true)"
 echo "$OUT6" | grep -qi "not joined" && ok "inbox rejects unsubscribed channel" || bad "no guard on unsubscribed channel: $OUT6"
 
+echo "── per-session cursors (same user, independent catch-up)"
+SYNCUP_SESSION=s1 b inbox >/dev/null   # anchor session s1 to now
+SYNCUP_SESSION=s2 b inbox >/dev/null   # anchor session s2 to now
+a publish "$CH" "PERSESSION broadcast" >/dev/null
+O1="$(SYNCUP_SESSION=s1 b inbox)"
+O2="$(SYNCUP_SESSION=s2 b inbox)"
+echo "$O1" | grep -q "PERSESSION" && ok "session s1 saw broadcast" || bad "s1 missed it: $O1"
+echo "$O2" | grep -q "PERSESSION" && ok "session s2 saw it independently" || bad "s2 missed it: $O2"
+O1b="$(SYNCUP_SESSION=s1 b inbox)"
+echo "$O1b" | grep -q "no new updates" && ok "s1 cursor advanced (no re-delivery)" || bad "s1 re-delivered: $O1b"
+
 echo "── leave"
 b leave "$CH" >/dev/null && ok "bob left" || bad "leave"
 b list | grep -E "✓ +$CH" >/dev/null && bad "still marked joined" || ok "no ✓ after leave"

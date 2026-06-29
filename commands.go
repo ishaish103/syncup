@@ -356,8 +356,16 @@ func cmdInbox(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if off < 0 || off < start {
-			off = start
+		if off < 0 {
+			// First time this group (e.g. a new session) sees the channel:
+			// anchor to "now" so we never replay history, and show nothing yet.
+			if err := commit(ctx, adm, cfg.group(), topic, end); err != nil {
+				return err
+			}
+			continue
+		}
+		if off < start {
+			off = start // committed offset fell behind retention; resume from earliest
 		}
 		recs, err := fetchFrom(ctx, cfg, topic, off, end)
 		if err != nil {

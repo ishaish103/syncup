@@ -59,5 +59,12 @@ func (c *Config) subscribed(topic string) bool {
 	return false
 }
 
-// group is the stable per-user Kafka consumer group used for offset tracking.
-func (c *Config) group() string { return groupPrefix + c.User }
+// group is the Kafka consumer group used for offset tracking. With SYNCUP_SESSION
+// set (the agent hooks pass the session id), each session gets its own group so
+// every open session catches up independently. Without it, it's per-user.
+func (c *Config) group() string {
+	if s := os.Getenv("SYNCUP_SESSION"); s != "" {
+		return groupPrefix + c.User + "." + s
+	}
+	return groupPrefix + c.User
+}

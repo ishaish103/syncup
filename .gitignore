@@ -1,0 +1,4 @@
+/syncup
+*.test
+.DS_Store
+.env

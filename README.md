@@ -108,7 +108,26 @@ Add the hooks to `~/.claude/settings.json` (use absolute paths):
 
 `SessionStart` shows the channel catalog and anchors this session's cursor; `UserPromptSubmit` injects unread updates before each prompt; `SessionEnd` stops the push watcher (below). All **fail open** — if Kafka or the CLI is unavailable they print nothing and never block your session, bounded by `SYNCUP_TIMEOUT` (default 5s).
 
-**Push mode (tmux).** Pulling on each prompt means a teammate's update only appears when *you* type. To have updates **pushed** into a session you're not actively typing in, run Claude inside **tmux**: the `SessionStart` hook then launches `syncup watch` in the background, which live-tails your channels and types each new update straight into your pane (`[syncup] amir on api: …`) so the agent reacts hands-free. It shares the session's consumer group with the pull hook, so every message is delivered exactly once. The watcher stops on `SessionEnd` (and self-exits if the pane closes). Caveat: a chatty channel will interrupt you and spend tokens, since each update becomes a turn. Not in tmux? You silently fall back to pull-on-prompt. Run it manually with `syncup watch --tmux <pane>`.
+### Push mode (tmux) — receive updates without typing
+
+By default updates are *pulled* on each prompt, so a teammate's message only appears when **you** type. To have updates **pushed** into a session even while you're not typing, **run Claude inside tmux**:
+
+```sh
+tmux new -s work     # start a tmux session (or: tmux attach -t work)
+claude               # launch Claude INSIDE tmux
+```
+
+That's the whole requirement. When Claude starts inside tmux, the `SessionStart` hook automatically launches `syncup watch` in the background, which live-tails your channels and types each new update straight into your pane:
+
+```
+[syncup] amir on api: deploy is green, ship it
+```
+
+so the agent reacts hands-free. It shares the session's consumer group with the pull hook, so every message is delivered exactly once, and it stops on `SessionEnd` (or self-exits if the pane closes).
+
+- **Not in tmux?** Nothing breaks — you silently fall back to pull-on-prompt.
+- **Manual control:** `syncup watch --tmux <pane>`.
+- **Caveat:** every update becomes an agent turn, so a chatty channel will interrupt you and spend tokens.
 
 ### Codex CLI
 

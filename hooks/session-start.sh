@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Claude Code SessionStart hook — print the channel catalog and anchor this
-# session's read position to "now". Fails open: never blocks a session.
+# Claude Code SessionStart hook — print the channel catalog, anchor this session's
+# read position to "now", and (if running in tmux) start a background watcher that
+# pushes new updates into this pane. Fails open: never blocks a session.
 export SYNCUP_TIMEOUT="${SYNCUP_TIMEOUT:-5}"
 command -v syncup >/dev/null 2>&1 || exit 0
 
@@ -8,6 +9,7 @@ command -v syncup >/dev/null 2>&1 || exit 0
 # inbox cursor so every open session catches up independently. Skip reading if
 # stdin is a terminal (manual run) so we don't block.
 input=""
+sid=""
 [ -t 0 ] || input="$(cat 2>/dev/null)"
 if [ -n "$input" ]; then
   sid="$(printf '%s' "$input" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("session_id",""))' 2>/dev/null)"
@@ -17,6 +19,18 @@ fi
 
 syncup list 2>/dev/null || true
 syncup inbox --quiet 2>/dev/null || true   # anchor this session's cursor to now
+
+# Push mode: in tmux, start a background watcher that injects new updates into this
+# pane. It shares the session consumer group, so there is no double delivery.
+if [ -n "$TMUX" ] && [ -n "$TMUX_PANE" ] && [ -n "$sid" ]; then
+  pidf="/tmp/syncup-watch-$sid.pid"
+  if ! { [ -f "$pidf" ] && kill -0 "$(cat "$pidf" 2>/dev/null)" 2>/dev/null; }; then
+    SYNCUP_SESSION="$sid" SYNCUP_TMUX="$TMUX_PANE" nohup syncup watch >"/tmp/syncup-watch-$sid.log" 2>&1 &
+    echo $! >"$pidf"
+    disown 2>/dev/null || true
+  fi
+fi
+
 cat <<'HINT'
 
 syncup is available for cross-team updates. When the user asks to post/share

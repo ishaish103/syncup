@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -431,3 +432,114 @@ func cmdDelete(ctx context.Context, args []string) error {
 	fmt.Printf("deleted channel %q\n", short(topic))
 	return nil
 }
+
+// cmdWatch runs as a daemon: it live-tails the subscribed channels and types each
+// new message into a tmux pane, so updates reach the agent without you prompting.
+// It shares the session consumer group with the inbox hook, so every message is
+// delivered exactly once (whichever path reads it first).
+func cmdWatch(args []string) error {
+	pane := ""
+	interval := 2 * time.Second
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--tmux":
+			if i+1 < len(args) {
+				pane = args[i+1]
+				i++
+			}
+		case "--interval":
+			if i+1 < len(args) {
+				if d, err := time.ParseDuration(args[i+1]); err == nil {
+					interval = d
+				}
+				i++
+			}
+		}
+	}
+	if pane == "" {
+		pane = os.Getenv("SYNCUP_TMUX")
+	}
+	if pane == "" {
+		pane = os.Getenv("TMUX_PANE")
+	}
+	if pane == "" {
+		return errors.New("no tmux target; run inside tmux or pass --tmux <pane>")
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	for {
+		if !tmuxPaneExists(pane) {
+			return nil // pane closed — the session is gone, so stop
+		}
+		if err := watchOnce(cfg, pane); err != nil {
+			fmt.Fprintln(os.Stderr, "watch:", err)
+		}
+		time.Sleep(interval)
+	}
+}
+
+// watchOnce delivers any new messages on subscribed channels into the pane.
+func watchOnce(cfg *Config, pane string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	adm, closeAdm, err := admin(cfg)
+	if err != nil {
+		return err
+	}
+	defer closeAdm()
+
+	for _, topic := range cfg.Subscriptions {
+		start, end, err := bounds(ctx, adm, topic)
+		if errors.Is(err, errNoTopic) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		off, err := committedOffset(ctx, adm, cfg.group(), topic)
+		if err != nil {
+			return err
+		}
+		if off < 0 {
+			if err := commit(ctx, adm, cfg.group(), topic, end); err != nil {
+				return err
+			}
+			continue
+		}
+		if off < start {
+			off = start
+		}
+		recs, err := fetchFrom(ctx, cfg, topic, off, end)
+		if err != nil {
+			return err
+		}
+		for _, r := range recs {
+			var m Message
+			if json.Unmarshal(r.Value, &m) != nil {
+				continue
+			}
+			tmuxInject(pane, fmt.Sprintf("[syncup] %s on %s: %s", m.Author, short(topic), oneLine(m.Body)))
+		}
+		if len(recs) > 0 {
+			if err := commit(ctx, adm, cfg.group(), topic, end); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func tmuxPaneExists(pane string) bool {
+	return exec.Command("tmux", "display-message", "-p", "-t", pane, "#{pane_id}").Run() == nil
+}
+
+// tmuxInject types text into the pane and submits it as a turn.
+func tmuxInject(pane, text string) {
+	_ = exec.Command("tmux", "send-keys", "-t", pane, "-l", "--", text).Run()
+	_ = exec.Command("tmux", "send-keys", "-t", pane, "Enter").Run()
+}
+
+// oneLine collapses whitespace so an injected message can't submit early.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

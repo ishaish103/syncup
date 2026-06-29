@@ -131,6 +131,20 @@ func TestSubscribedAndGroup(t *testing.T) {
 	}
 }
 
+func TestOneLine(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"hello world", "hello world"},
+		{"line one\nline two", "line one line two"},
+		{"  extra   spaces\t and\ntabs ", "extra spaces and tabs"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := oneLine(c.in); got != c.want {
+			t.Errorf("oneLine(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestMessageJSONRoundTrip(t *testing.T) {
 	in := Message{ID: "x1", Topic: "syncup.api", Author: "alice", TS: now(), Type: "update", Body: "hi", Refs: map[string]string{"pr": "42"}}
 	b, err := json.Marshal(in)

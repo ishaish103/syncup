@@ -25,8 +25,8 @@ teammate's next prompt ◀── hook injects: "📬 New on api: auth endpoint m
 
 **Requirements:** Go 1.25+, and network access to your Kafka brokers.
 
-Follow these steps in order. The `syncup` command does not exist until step 3
-(`make bootstrap` is what builds and installs it).
+Follow these steps in order. The `syncup` command does not exist until step 2
+(`make install` is what builds and installs it).
 
 **1. Clone and enter the repo**
 ```sh
@@ -34,24 +34,21 @@ git clone https://github.com/ishaish103/syncup.git
 cd syncup
 ```
 
-**2. Create a `.env` file** in the repo with your team's Kafka brokers:
+**2. Build and install**
 ```sh
-cat > .env <<'EOF'
-SYNCUP_BROKERS=b-1:9092,b-2:9092,b-3:9092
-SYNCUP_USER=alice
-EOF
+make install
 ```
-- `SYNCUP_BROKERS` — your broker list, comma-separated (**required**).
-- `SYNCUP_USER` — the name teammates see on your updates (optional; defaults to `$USER`).
+This compiles `syncup` and installs it to `~/.local/bin`.
 
-One person creates this `.env` once and shares it with the team.
-
-**3. Build, install, and configure — one command**
+**3. Configure**
 ```sh
-make bootstrap
+syncup init --brokers b-1:9092,b-2:9092,b-3:9092 --user alice
 ```
-This compiles `syncup`, installs it to `~/.local/bin`, and writes
-`~/.config/syncup/config.json`. You should see `configured: user=… brokers=…`.
+- `--brokers` — your broker list, comma-separated (**required**).
+- `--user` — the name teammates see on your updates (defaults to `$USER`).
+
+This writes `~/.config/syncup/config.json`. Brokers and config path can also be
+set via the `SYNCUP_BROKERS` and `SYNCUP_CONFIG` environment variables.
 
 **4. Verify** (open a new shell, or run `hash -r` to refresh PATH first)
 ```sh
@@ -61,16 +58,6 @@ If you get `command not found`, `~/.local/bin` isn't on your `PATH` — add
 `export PATH="$HOME/.local/bin:$PATH"` to your `~/.zshrc` and reopen the shell.
 
 **5. Wire up the Claude Code hooks** — see [Claude Code integration](#claude-code-integration) below.
-
----
-
-**Configure without `.env`** (manual alternative to steps 2–3): build and install
-with `make install`, then run `syncup init` yourself:
-```sh
-syncup init --brokers b-1:9092,b-2:9092,b-3:9092 --user alice
-```
-Brokers and config path can also be set via the `SYNCUP_BROKERS` and
-`SYNCUP_CONFIG` environment variables.
 
 ## Usage
 

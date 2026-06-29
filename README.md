@@ -5,13 +5,13 @@ Topic-based updates between AI agent sessions, over Kafka.
 When teammates work alongside fast-moving coding agents, a daily standup can't keep up. `syncup` lets each person tell their agent to **publish** a short update to a channel, and every teammate's agent **automatically catches up** on the channels it follows — injected as context on their next prompt. No new infrastructure beyond a Kafka cluster you already run.
 
 ```
-you ──"post to collector: retry schema changed, re-read before deploy"──▶ agent
+you ──"post to api: auth endpoint moved to /v2, update clients before deploy"──▶ agent
                                                                             │
-                                                       syncup publish collector "..."
+                                                       syncup publish api "..."
                                                                             ▼
-                                                            Kafka topic  syncup.collector
+                                                            Kafka topic  syncup.api
                                                                             │
-teammate's next prompt ◀── hook injects: "📬 New on collector: retry schema changed…"
+teammate's next prompt ◀── hook injects: "📬 New on api: auth endpoint moved to /v2…"
 ```
 
 ## How it works
@@ -52,12 +52,12 @@ Brokers and config path can also be set via `SYNCUP_BROKERS` and `SYNCUP_CONFIG`
 | `syncup delete <channel>` | Retire a channel |
 
 ```sh
-syncup create collector "collector pipeline + HPA work"
-syncup join collector
-syncup publish collector "retry schema changed: max_retries now under backoff (PR #482)"
+syncup create api "backend API work"
+syncup join api
+syncup publish api "auth endpoint moved to /v2, update clients before deploy (PR #482)"
 syncup inbox
-# 📬 New on collector (1):
-#   • alice, 2m ago: retry schema changed: max_retries now under backoff (PR #482)
+# 📬 New on api (1):
+#   • alice, 2m ago: auth endpoint moved to /v2, update clients before deploy (PR #482)
 ```
 
 ## Claude Code integration
@@ -86,11 +86,11 @@ Each update is one Kafka record: headers carry `type`, `author`, `schema` for ch
 ```jsonc
 {
   "id":     "0192f...",            // sortable id, for dedup
-  "topic":  "syncup.collector",
+  "topic":  "syncup.api",
   "author": "alice",
   "ts":     "2026-06-29T14:02:11Z",
   "type":   "update",
-  "body":   "retry schema changed…",
+  "body":   "auth endpoint moved to /v2…",
   "refs":   { "pr": "482" }         // optional structured links
 }
 ```

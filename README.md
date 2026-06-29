@@ -23,21 +23,50 @@ teammate's next prompt ◀── hook injects: "📬 New on api: auth endpoint m
 
 ## Setup
 
-Share a `.env` with your team's brokers, then each person runs one command:
+**Requirements:** Go 1.25+, and network access to your Kafka brokers.
 
+Follow these steps in order. The `syncup` command does not exist until step 3
+(`make bootstrap` is what builds and installs it).
+
+**1. Clone and enter the repo**
 ```sh
-cp .env.example .env          # set SYNCUP_BROKERS (do this once, share with the team)
-make bootstrap                # builds, installs to ~/.local/bin, runs `syncup init`
+git clone https://github.com/ishaish103/syncup.git
+cd syncup
 ```
 
-`bootstrap` reads brokers from `.env` and your username from `$USER` (override with
-`SYNCUP_USER`). To configure manually instead:
+**2. Point it at your team's Kafka brokers**
+```sh
+cp .env.example .env
+```
+Then edit `.env` and set `SYNCUP_BROKERS` to your broker list (comma-separated).
+Optionally set `SYNCUP_USER` to the name teammates see on your updates (defaults
+to `$USER`). One person sets this `.env` up; share it with the team.
 
+**3. Build, install, and configure — one command**
+```sh
+make bootstrap
+```
+This compiles `syncup`, installs it to `~/.local/bin`, and writes
+`~/.config/syncup/config.json`. You should see `configured: user=… brokers=…`.
+
+**4. Verify** (open a new shell, or run `hash -r` to refresh PATH first)
+```sh
+syncup list
+```
+If you get `command not found`, `~/.local/bin` isn't on your `PATH` — add
+`export PATH="$HOME/.local/bin:$PATH"` to your `~/.zshrc` and reopen the shell.
+
+**5. Wire up the Claude Code hooks** — see [Claude Code integration](#claude-code-integration) below.
+
+---
+
+**Configure without `.env`** (manual alternative to steps 2–3): build and install
+with `make install`, then run `syncup init` yourself:
 ```sh
 syncup init --brokers b-1:9092,b-2:9092,b-3:9092 --user alice
 ```
-
-Brokers and config path can also be set via `SYNCUP_BROKERS` and `SYNCUP_CONFIG`.
+Brokers and config path can also be set via the `SYNCUP_BROKERS` and
+`SYNCUP_CONFIG` environment variables.
 
 ## Usage
 

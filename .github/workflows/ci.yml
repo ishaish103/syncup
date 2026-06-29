@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: unit + vet + fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "needs gofmt:"; echo "$unformatted"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -cover ./...
+
+  e2e:
+    name: e2e against Kafka
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build
+        run: go build -o syncup .
+      - name: start kafka
+        run: |
+          docker run -d --name kafka -p 9092:9092 \
+            -e KAFKA_CFG_NODE_ID=1 -e KAFKA_CFG_PROCESS_ROLES=broker,controller \
+            -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+            -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+            -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
+            -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
+            -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+            -e KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
+            -e KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+            -e KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+            -e KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+            -e ALLOW_PLAINTEXT_LISTENER=yes \
+            bitnamilegacy/kafka:3.7
+      - name: wait for kafka
+        run: |
+          for i in $(seq 1 60); do
+            if docker exec kafka /opt/bitnami/kafka/bin/kafka-broker-api-versions.sh \
+                 --bootstrap-server localhost:9092 >/dev/null 2>&1; then
+              echo "kafka ready after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "kafka did not become ready"; docker logs kafka; exit 1
+      - name: e2e
+        run: BROKERS=localhost:9092 bash test/e2e.sh

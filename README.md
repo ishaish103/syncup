@@ -1,5 +1,7 @@
 # syncup
 
+[![CI](https://github.com/ishaish103/syncup/actions/workflows/ci.yml/badge.svg)](https://github.com/ishaish103/syncup/actions/workflows/ci.yml)
+
 Topic-based updates between AI agent sessions, over Kafka.
 
 When teammates work alongside fast-moving coding agents, a daily standup can't keep up. `syncup` lets each person tell their agent to **publish** a short update to a channel, and every teammate's agent **automatically catches up** on the channels it follows — injected as context on their next prompt. No new infrastructure beyond a Kafka cluster you already run.
@@ -138,9 +140,20 @@ Each update is one Kafka record: headers carry `type`, `author`, `schema` for ch
 
 ## Design notes
 
-- **From-now semantics.** `join` commits the channel's current end offset, so you only ever see messages posted after you joined. (History replay is a deliberate non-feature for now.)
-- **Per-user offsets.** All your sessions share the consumer group `syncup.<user>`, so "caught up" follows you across machines. Two *simultaneous* sessions can race a commit — rare and low-stakes.
+- **From-now semantics.** On *first* join, `syncup` records the channel's current end offset, so you only ever see messages posted after you joined. Re-joining a channel you already follow leaves your position untouched (it never skips unread). History replay is a deliberate non-feature for now.
+- **Per-user offsets.** "Unread" is tracked once per person, via the consumer group `syncup.<user>` — so an update reaches each teammate exactly once, and "caught up" follows you across machines. Note: if *you* run several sessions at once, whichever reads first advances the shared cursor; the others won't re-show that update.
 - **Namespacing.** Every topic is prefixed `syncup.`, so the tool coexists safely on a shared cluster and `list` only ever shows channels from its own registry.
+- **Resilience.** Group-coordinator hiccups (fresh cluster, failover) are retried; the Claude Code hooks fail open so a Kafka outage never blocks your session.
+
+## Development
+
+```sh
+go test ./...                       # unit tests (no Kafka needed)
+BROKERS=localhost:9092 make test    # end-to-end against a real broker
+```
+
+CI runs unit tests, `go vet`, and a `gofmt` check on every push, plus the full
+end-to-end suite against a throwaway Kafka container.
 
 ## License
 

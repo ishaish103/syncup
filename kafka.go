@@ -110,26 +110,58 @@ func fetchFrom(ctx context.Context, cfg *Config, topic string, start, end int64)
 
 // committedOffset returns the committed offset for (group, topic, p0), or -1 if none.
 func committedOffset(ctx context.Context, adm *kadm.Client, group, topic string) (int64, error) {
-	resp, err := adm.FetchOffsets(ctx, group)
-	if err != nil {
-		return 0, err
-	}
-	o, ok := resp.Lookup(topic, 0)
-	if !ok || o.Err != nil {
-		return -1, nil
-	}
-	return o.At, nil
+	off := int64(-1)
+	err := withCoordRetry(ctx, func() error {
+		resp, err := adm.FetchOffsets(ctx, group)
+		if err != nil {
+			return err
+		}
+		if err := resp.Error(); err != nil {
+			return err
+		}
+		if o, ok := resp.Lookup(topic, 0); ok && o.Err == nil {
+			off = o.At
+		}
+		return nil
+	})
+	return off, err
 }
 
 // commit stores the committed offset for (group, topic, p0).
 func commit(ctx context.Context, adm *kadm.Client, group, topic string, offset int64) error {
 	os := make(kadm.Offsets)
 	os.AddOffset(topic, 0, offset, -1)
-	resp, err := adm.CommitOffsets(ctx, group, os)
-	if err != nil {
-		return err
+	return withCoordRetry(ctx, func() error {
+		resp, err := adm.CommitOffsets(ctx, group, os)
+		if err != nil {
+			return err
+		}
+		return resp.Error()
+	})
+}
+
+// isCoordRetriable reports whether err is a transient group-coordinator error —
+// seen on a fresh cluster (before __consumer_offsets exists) or during failover.
+func isCoordRetriable(err error) bool {
+	return errors.Is(err, kerr.CoordinatorNotAvailable) ||
+		errors.Is(err, kerr.CoordinatorLoadInProgress) ||
+		errors.Is(err, kerr.NotCoordinator)
+}
+
+// withCoordRetry retries fn on transient coordinator errors until ctx is done.
+func withCoordRetry(ctx context.Context, fn func() error) error {
+	var err error
+	for i := 0; i < 12; i++ {
+		if err = fn(); err == nil || !isCoordRetriable(err) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
-	return resp.Error()
+	return err
 }
 
 func produce(ctx context.Context, cfg *Config, rec *kgo.Record) error {

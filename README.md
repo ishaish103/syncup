@@ -34,13 +34,17 @@ git clone https://github.com/ishaish103/syncup.git
 cd syncup
 ```
 
-**2. Point it at your team's Kafka brokers**
+**2. Create a `.env` file** in the repo with your team's Kafka brokers:
 ```sh
-cp .env.example .env
+cat > .env <<'EOF'
+SYNCUP_BROKERS=b-1:9092,b-2:9092,b-3:9092
+SYNCUP_USER=alice
+EOF
 ```
-Then edit `.env` and set `SYNCUP_BROKERS` to your broker list (comma-separated).
-Optionally set `SYNCUP_USER` to the name teammates see on your updates (defaults
-to `$USER`). One person sets this `.env` up; share it with the team.
+- `SYNCUP_BROKERS` — your broker list, comma-separated (**required**).
+- `SYNCUP_USER` — the name teammates see on your updates (optional; defaults to `$USER`).
+
+One person creates this `.env` once and shares it with the team.
 
 **3. Build, install, and configure — one command**
 ```sh

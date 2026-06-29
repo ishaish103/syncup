@@ -18,7 +18,7 @@ Usage:
   syncup join <channel>                              subscribe (from now on)
   syncup leave <channel>                             unsubscribe
   syncup publish <channel> <message...>             post an update
-  syncup inbox [--quiet]                             read unread updates
+  syncup inbox [channel] [--quiet]                   read unread updates (all, or one channel)
   syncup delete <channel>                            retire a channel
 
 Env: SYNCUP_BROKERS, SYNCUP_CONFIG override config.`

@@ -80,7 +80,11 @@ syncup inbox
 #   • alice, 2m ago: auth endpoint moved to /v2, update clients before deploy (PR #482)
 ```
 
-## Claude Code integration
+## Agent integration
+
+`syncup` is just a CLI, so **any agent that can run shell commands can use it** — to publish, run `syncup publish …`; to catch up, run `syncup inbox`. The only agent-specific part is how updates get surfaced *automatically* before each turn. Pick the section for your tool.
+
+### Claude Code (automatic, via hooks)
 
 Add the hooks to `~/.claude/settings.json` (use absolute paths):
 
@@ -97,7 +101,24 @@ Add the hooks to `~/.claude/settings.json` (use absolute paths):
 }
 ```
 
-Both hooks **fail open** — if Kafka or the CLI is unavailable they print nothing and never block your session. They bound their runtime with `SYNCUP_TIMEOUT` (default 5s in the hooks).
+`SessionStart` shows the channel catalog; `UserPromptSubmit` injects unread updates before each prompt. Both **fail open** — if Kafka or the CLI is unavailable they print nothing and never block your session, bounded by `SYNCUP_TIMEOUT` (default 5s).
+
+### Codex CLI
+
+Codex has no per-prompt hook, so instruct the agent via `AGENTS.md` (global `~/.codex/AGENTS.md`, or per-repo). The agent then runs the CLI itself:
+
+```md
+## syncup — team updates
+- At the start of a task, run `syncup inbox` and surface anything new.
+- When I ask to share/post an update, run `syncup publish <channel> "<message>"`.
+- Discover channels with `syncup list`; follow one with `syncup join <channel>`.
+```
+
+### Other agents (Cursor, Cline, Aider, …) / manual
+
+- **With a rules/instructions file** (e.g. Cursor rules, `CLAUDE.md`, a system prompt): paste the same instruction block as above.
+- **With a pre-prompt/pre-run hook**: wire `syncup inbox` into it, the same way the Claude Code hook does.
+- **No automation**: just run `syncup inbox` yourself whenever you want to catch up, and `syncup publish …` to post.
 
 ## Message schema
 

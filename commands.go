@@ -230,9 +230,16 @@ func cmdJoin(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	// Commit the end offset so we only ever see messages produced from now on.
-	if err := commit(ctx, adm, cfg.group(), topic, end); err != nil {
+	// On first join, start from now. If we already track an offset for this
+	// channel, leave it untouched so re-joining never skips unread messages.
+	off, err := committedOffset(ctx, adm, cfg.group(), topic)
+	if err != nil {
 		return err
+	}
+	if off < 0 {
+		if err := commit(ctx, adm, cfg.group(), topic, end); err != nil {
+			return err
+		}
 	}
 	if !cfg.subscribed(topic) {
 		cfg.Subscriptions = append(cfg.Subscriptions, topic)
@@ -298,15 +305,32 @@ func cmdPublish(ctx context.Context, args []string) error {
 
 func cmdInbox(ctx context.Context, args []string) error {
 	quiet := false
+	only := ""
 	for _, a := range args {
-		if a == "--quiet" || a == "-q" {
+		switch {
+		case a == "--quiet" || a == "-q":
 			quiet = true
+		case strings.HasPrefix(a, "-"):
+			// ignore unknown flags
+		default:
+			only = a
 		}
 	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
+
+	// Read all subscribed channels, or just one if named.
+	topics := cfg.Subscriptions
+	if only != "" {
+		t := canon(only)
+		if !cfg.subscribed(t) {
+			return fmt.Errorf("not joined to %q (run: syncup join %s)", short(t), short(t))
+		}
+		topics = []string{t}
+	}
+
 	adm, closeAdm, err := admin(cfg)
 	if err != nil {
 		return err
@@ -320,7 +344,7 @@ func cmdInbox(ctx context.Context, args []string) error {
 	var blocks []block
 	commits := map[string]int64{}
 
-	for _, topic := range cfg.Subscriptions {
+	for _, topic := range topics {
 		start, end, err := bounds(ctx, adm, topic)
 		if errors.Is(err, errNoTopic) {
 			continue

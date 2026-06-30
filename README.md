@@ -101,25 +101,25 @@ Add to `~/.claude/settings.json` (absolute paths to the installed scripts — se
 ```
 </details>
 
-### Push mode (tmux) — receive updates without typing
+### Push mode (tmux or herdr) — receive updates without typing
 
-By default updates are *pulled* on each prompt, so a teammate's message only appears when **you** type. To have updates **pushed** into a session even while you're not typing, **run Claude inside tmux**:
+By default updates are *pulled* on each prompt, so a teammate's message only appears when **you** type. To have updates **pushed** into a session even while you're not typing, **run your agent inside a multiplexer** — tmux or [herdr](https://github.com/ogulcancelik/herdr):
 
 ```sh
-tmux new -s work     # start a tmux session (or: tmux attach -t work)
-claude               # launch Claude INSIDE tmux
+tmux new -s work && claude    # tmux …
+herdr                         # … or herdr (then launch your agent in a pane)
 ```
 
-That's the whole requirement. When Claude starts inside tmux, the `SessionStart` hook automatically launches `syncup watch` in the background, which live-tails your channels and types each new update straight into your pane:
+That's the whole requirement. When the agent starts inside one, the `SessionStart` hook launches `syncup watch` in the background, which live-tails your channels and types each new update straight into your pane:
 
 ```
 [syncup] amir on api: deploy is green, ship it
 ```
 
-so the agent reacts hands-free. It shares the session's consumer group with the pull hook, so every message is delivered exactly once, and it stops on `SessionEnd` (or self-exits if the pane closes).
+so the agent reacts hands-free. `syncup watch` **auto-detects** the multiplexer from its env (`TMUX_PANE` → `tmux send-keys`; `HERDR_PANE_ID` → `herdr pane send-text`). It shares the session's consumer group with the pull hook, so every message is delivered exactly once, and it stops on `SessionEnd`.
 
-- **Not in tmux?** Nothing breaks — you silently fall back to pull-on-prompt.
-- **Manual control:** `syncup watch --tmux <pane>`.
+- **Not in a multiplexer?** Nothing breaks — you silently fall back to pull-on-prompt.
+- **Manual control:** `syncup watch --tmux <pane>` or `syncup watch --herdr <pane>`.
 - **Caveat:** every update becomes an agent turn, so a chatty channel will interrupt you and spend tokens.
 
 ### Codex CLI

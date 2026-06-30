@@ -433,18 +433,79 @@ func cmdDelete(ctx context.Context, args []string) error {
 	return nil
 }
 
+// muxer abstracts the terminal multiplexer we inject into (tmux or herdr).
+type muxer struct {
+	name   string
+	pane   string
+	exists func(pane string) bool // nil if liveness can't be checked
+	inject func(pane, text string) error
+}
+
+// tmux backend: `tmux send-keys`.
+func tmuxMuxer(pane string) *muxer {
+	return &muxer{
+		name: "tmux", pane: pane,
+		exists: func(p string) bool {
+			return exec.Command("tmux", "display-message", "-p", "-t", p, "#{pane_id}").Run() == nil
+		},
+		inject: func(p, text string) error {
+			if err := exec.Command("tmux", "send-keys", "-t", p, "-l", "--", text).Run(); err != nil {
+				return err
+			}
+			return exec.Command("tmux", "send-keys", "-t", p, "Enter").Run()
+		},
+	}
+}
+
+// herdr backend: `herdr pane send-text` + `send-keys enter`.
+func herdrMuxer(pane string) *muxer {
+	return &muxer{
+		name: "herdr", pane: pane,
+		exists: nil, // rely on the SessionEnd hook / inject failures
+		inject: func(p, text string) error {
+			if err := exec.Command("herdr", "pane", "send-text", p, text).Run(); err != nil {
+				return err
+			}
+			return exec.Command("herdr", "pane", "send-keys", p, "enter").Run()
+		},
+	}
+}
+
+// detectMuxer picks the injection backend: explicit flags win, then env vars
+// (herdr's HERDR_PANE_ID or tmux's TMUX_PANE) set inside the session.
+func detectMuxer(tmuxFlag, herdrFlag string) *muxer {
+	switch {
+	case herdrFlag != "":
+		return herdrMuxer(herdrFlag)
+	case tmuxFlag != "":
+		return tmuxMuxer(tmuxFlag)
+	case os.Getenv("HERDR_PANE_ID") != "":
+		return herdrMuxer(os.Getenv("HERDR_PANE_ID"))
+	case os.Getenv("SYNCUP_TMUX") != "":
+		return tmuxMuxer(os.Getenv("SYNCUP_TMUX"))
+	case os.Getenv("TMUX_PANE") != "":
+		return tmuxMuxer(os.Getenv("TMUX_PANE"))
+	}
+	return nil
+}
+
 // cmdWatch runs as a daemon: it live-tails the subscribed channels and types each
-// new message into a tmux pane, so updates reach the agent without you prompting.
-// It shares the session consumer group with the inbox hook, so every message is
-// delivered exactly once (whichever path reads it first).
+// new message into the session's pane (tmux or herdr), so updates reach the agent
+// without you prompting. It shares the session consumer group with the inbox hook,
+// so every message is delivered exactly once (whichever path reads it first).
 func cmdWatch(args []string) error {
-	pane := ""
+	var tmuxFlag, herdrFlag string
 	interval := 2 * time.Second
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--tmux":
 			if i+1 < len(args) {
-				pane = args[i+1]
+				tmuxFlag = args[i+1]
+				i++
+			}
+		case "--herdr":
+			if i+1 < len(args) {
+				herdrFlag = args[i+1]
 				i++
 			}
 		case "--interval":
@@ -456,24 +517,19 @@ func cmdWatch(args []string) error {
 			}
 		}
 	}
-	if pane == "" {
-		pane = os.Getenv("SYNCUP_TMUX")
-	}
-	if pane == "" {
-		pane = os.Getenv("TMUX_PANE")
-	}
-	if pane == "" {
-		return errors.New("no tmux target; run inside tmux or pass --tmux <pane>")
+	m := detectMuxer(tmuxFlag, herdrFlag)
+	if m == nil {
+		return errors.New("no tmux or herdr pane detected; run inside one, or pass --tmux/--herdr <pane>")
 	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
 	for {
-		if !tmuxPaneExists(pane) {
+		if m.exists != nil && !m.exists(m.pane) {
 			return nil // pane closed — the session is gone, so stop
 		}
-		if err := watchOnce(cfg, pane); err != nil {
+		if err := watchOnce(cfg, m); err != nil {
 			fmt.Fprintln(os.Stderr, "watch:", err)
 		}
 		time.Sleep(interval)
@@ -481,7 +537,7 @@ func cmdWatch(args []string) error {
 }
 
 // watchOnce delivers any new messages on subscribed channels into the pane.
-func watchOnce(cfg *Config, pane string) error {
+func watchOnce(cfg *Config, m *muxer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	adm, closeAdm, err := admin(cfg)
@@ -516,11 +572,13 @@ func watchOnce(cfg *Config, pane string) error {
 			return err
 		}
 		for _, r := range recs {
-			var m Message
-			if json.Unmarshal(r.Value, &m) != nil {
+			var msg Message
+			if json.Unmarshal(r.Value, &msg) != nil {
 				continue
 			}
-			tmuxInject(pane, fmt.Sprintf("[syncup] %s on %s: %s", m.Author, short(topic), oneLine(m.Body)))
+			if err := m.inject(m.pane, fmt.Sprintf("[syncup] %s on %s: %s", msg.Author, short(topic), oneLine(msg.Body))); err != nil {
+				return err
+			}
 		}
 		if len(recs) > 0 {
 			if err := commit(ctx, adm, cfg.group(), topic, end); err != nil {
@@ -529,16 +587,6 @@ func watchOnce(cfg *Config, pane string) error {
 		}
 	}
 	return nil
-}
-
-func tmuxPaneExists(pane string) bool {
-	return exec.Command("tmux", "display-message", "-p", "-t", pane, "#{pane_id}").Run() == nil
-}
-
-// tmuxInject types text into the pane and submits it as a turn.
-func tmuxInject(pane, text string) {
-	_ = exec.Command("tmux", "send-keys", "-t", pane, "-l", "--", text).Run()
-	_ = exec.Command("tmux", "send-keys", "-t", pane, "Enter").Run()
 }
 
 // oneLine collapses whitespace so an injected message can't submit early.

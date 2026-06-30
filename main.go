@@ -19,7 +19,7 @@ Usage:
   syncup leave <channel>                             unsubscribe
   syncup publish <channel> <message...>             post an update
   syncup inbox [channel] [--quiet]                   read unread updates (all, or one channel)
-  syncup watch [--tmux <pane>] [--interval 2s]       daemon: push new updates into a tmux pane
+  syncup watch [--tmux|--herdr <pane>] [--interval 2s]  daemon: push new updates into your pane
   syncup hooks install                               install Claude Code hooks into settings.json
   syncup hooks path                                  print where hooks are installed
   syncup delete <channel>                            retire a channel

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -142,6 +143,37 @@ func TestOneLine(t *testing.T) {
 		if got := oneLine(c.in); got != c.want {
 			t.Errorf("oneLine(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestPatchClaudeSettingsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SYNCUP_CONFIG", filepath.Join(dir, "config.json"))
+	settings := filepath.Join(dir, "settings.json")
+	t.Setenv("SYNCUP_CLAUDE_SETTINGS", settings)
+	// Pre-existing unrelated key + a non-syncup SessionStart hook.
+	os.WriteFile(settings, []byte(`{"model":"x","hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"/other/tool.sh"}]}]}}`), 0o644)
+
+	hooksDir := filepath.Join(dir, "hooks")
+	for i := 0; i < 3; i++ {
+		if err := patchClaudeSettings(hooksDir); err != nil {
+			t.Fatalf("patch %d: %v", i, err)
+		}
+	}
+	var d map[string]any
+	b, _ := os.ReadFile(settings)
+	if err := json.Unmarshal(b, &d); err != nil {
+		t.Fatal(err)
+	}
+	hooks := d["hooks"].(map[string]any)
+	if n := len(hooks["SessionStart"].([]any)); n != 2 {
+		t.Errorf("SessionStart entries = %d, want 2 (other tool + ours)", n)
+	}
+	if n := len(hooks["UserPromptSubmit"].([]any)); n != 1 {
+		t.Errorf("UserPromptSubmit entries = %d, want 1", n)
+	}
+	if d["model"] != "x" {
+		t.Errorf("unrelated key not preserved: %v", d["model"])
 	}
 }
 

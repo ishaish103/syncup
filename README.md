@@ -38,11 +38,13 @@ git clone https://github.com/ishaish103/syncup.git
 cd syncup
 ```
 
-**2. Build and install**
+**2. Install**
+
+Homebrew (recommended):
 ```sh
-make install
+brew install ishaish103/tap/syncup
 ```
-This compiles `syncup` and installs it to `~/.local/bin`.
+Or build from source: `make install` (compiles `syncup` to `~/.local/bin`).
 
 **3. Configure**
 ```sh
@@ -61,7 +63,7 @@ syncup list
 If you get `command not found`, `~/.local/bin` isn't on your `PATH` — add
 `export PATH="$HOME/.local/bin:$PATH"` to your `~/.zshrc` and reopen the shell.
 
-**5. Integrate with your agent** — wire up the hooks below so updates flow automatically.
+**5. Integrate with your agent** — for Claude Code, just run `syncup hooks install` (details below). Other agents: see [Agent integration](#agent-integration).
 
 ## Agent integration
 
@@ -69,25 +71,35 @@ If you get `command not found`, `~/.local/bin` isn't on your `PATH` — add
 
 ### Claude Code (automatic, via hooks)
 
-Add the hooks to `~/.claude/settings.json` (use absolute paths):
+One command writes the hook scripts and wires them into `~/.claude/settings.json`:
+
+```sh
+syncup hooks install
+```
+
+It's idempotent and leaves any non-syncup hooks untouched; `syncup hooks path` prints where they were written. It installs three hooks:
+
+- `SessionStart` — shows the channel catalog and anchors this session's cursor
+- `UserPromptSubmit` — injects unread updates before each prompt
+- `SessionEnd` — stops the push watcher (below)
+
+All **fail open** — if Kafka or the CLI is unavailable they print nothing and never block your session, bounded by `SYNCUP_TIMEOUT` (default 5s).
+
+<details>
+<summary>Configure manually instead</summary>
+
+Add to `~/.claude/settings.json` (absolute paths to the installed scripts — see `syncup hooks path`):
 
 ```json
 {
   "hooks": {
-    "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "/abs/path/syncup/hooks/session-start.sh" } ] }
-    ],
-    "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "/abs/path/syncup/hooks/user-prompt-submit.sh" } ] }
-    ],
-    "SessionEnd": [
-      { "hooks": [ { "type": "command", "command": "/abs/path/syncup/hooks/session-end.sh" } ] }
-    ]
+    "SessionStart":     [ { "hooks": [ { "type": "command", "command": "/abs/path/hooks/session-start.sh" } ] } ],
+    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "/abs/path/hooks/user-prompt-submit.sh" } ] } ],
+    "SessionEnd":       [ { "hooks": [ { "type": "command", "command": "/abs/path/hooks/session-end.sh" } ] } ]
   }
 }
 ```
-
-`SessionStart` shows the channel catalog and anchors this session's cursor; `UserPromptSubmit` injects unread updates before each prompt; `SessionEnd` stops the push watcher (below). All **fail open** — if Kafka or the CLI is unavailable they print nothing and never block your session, bounded by `SYNCUP_TIMEOUT` (default 5s).
+</details>
 
 ### Push mode (tmux) — receive updates without typing
 

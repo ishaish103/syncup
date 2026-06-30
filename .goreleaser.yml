@@ -1,0 +1,43 @@
+version: 2
+
+project_name: syncup
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: syncup
+    binary: syncup
+    main: .
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+
+archives:
+  - id: syncup
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+brews:
+  - name: syncup
+    repository:
+      owner: ishaish103
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/ishaish103/syncup"
+    description: "Topic-based updates between AI agent sessions, over Kafka"
+    license: "MIT"
+    install: |
+      bin.install "syncup"
+    test: |
+      system "#{bin}/syncup", "help"
+    caveats: |
+      Configure and wire syncup into Claude Code:
+        syncup init --brokers <b1,b2,..> --user <name>
+        syncup hooks install

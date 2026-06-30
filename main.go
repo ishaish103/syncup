@@ -20,6 +20,8 @@ Usage:
   syncup publish <channel> <message...>             post an update
   syncup inbox [channel] [--quiet]                   read unread updates (all, or one channel)
   syncup watch [--tmux <pane>] [--interval 2s]       daemon: push new updates into a tmux pane
+  syncup hooks install                               install Claude Code hooks into settings.json
+  syncup hooks path                                  print where hooks are installed
   syncup delete <channel>                            retire a channel
 
 Env: SYNCUP_BROKERS, SYNCUP_CONFIG override config.`
@@ -69,6 +71,8 @@ func main() {
 		err = cmdInbox(ctx, args)
 	case "watch":
 		err = cmdWatch(args) // long-running daemon; manages its own timeouts
+	case "hooks":
+		err = cmdHooks(args)
 	case "delete", "rm":
 		err = cmdDelete(ctx, args)
 	case "-h", "--help", "help":
